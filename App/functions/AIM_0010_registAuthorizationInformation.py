@@ -1,3 +1,5 @@
+# © 2026 NTT DATA Japan Co., Ltd. & NTT InfraNet All Rights Reserved.
+
 """
 AIM_0010_registAuthorizationInformation.py
 
@@ -85,6 +87,11 @@ def validate_file_name(file_name):
         len(Constants.PREFIX_REFERENCEABLE_LAYER_FACILITY):-len(Constants.SUFFIX_CSV)
         # fmt: on
     ]
+
+    # 接頭辞と拡張子を除去した値が"_"を含むこと
+    if "_" not in body:
+        logger.error("BPE0019", "ファイル名", file_name)
+        logger.process_error_end()
 
     # [公益事業者・道路管理者コード]と[申請日付]を分離
     provider_code, application_date = body.rsplit("_", 1)
@@ -251,8 +258,14 @@ def validate_authorization_information_rows(authorization_information_list):
                 "BPE0063", AREA_IGNORE_FLAG, row_count, authorization_information
             )
             logger.process_error_end()
-        # 半角数字1文字で構成されていること
-        if not Validations.is_single_digit(area_ignore_flag):
+        if (
+            # 半角数字1文字で構成されていること
+            not Validations.is_single_digit(area_ignore_flag)
+            # 0または1であること
+            or not Validations.is_value_in_list(
+                int(area_ignore_flag), Constants.DIGIT_FLAG_LIST
+            )
+        ):
             logger.error(
                 "BPE0064", AREA_IGNORE_FLAG, row_count, authorization_information
             )
@@ -316,10 +329,7 @@ def get_authorization_group_codelist(
         (tuple(authorization_group_name_list),),
         fetchone=True,
     )
-
-    # 認可グループIDリスト
-    authorization_group_id_list = list(result.values())
-    return result, authorization_group_id_list
+    return result
 
 
 # 10. 認可情報リスト修正
@@ -415,54 +425,32 @@ def check_vector_layer_exists(db_connection, db_mst_schema, layer_id_list):
         logger.process_error_end()
 
 
-# 14. 認可レイヤ存在確認
-def check_referenceable_layer_facility_exists(
-    conn, db_mst_schema, authorization_group_id
-):
-    # 認可レイヤ（設備）に既存データが存在するか確認
-    query = (
-        f"SELECT EXISTS (SELECT 1 FROM {db_mst_schema}.mst_referenceable_layer_facility"
-        " WHERE authorization_group_id = %s);"
-    )
-    result = Database.execute_query_no_commit(
-        conn, logger, query, (authorization_group_id,), fetchone=True
-    )
-    return result
-
-
-# 15. 認可レイヤ削除
-def delete_referenceable_layer_facility(conn, db_mst_schema, authorization_group_id):
+# 13. 認可レイヤ削除
+def delete_referenceable_layer_facility(conn, db_mst_schema, provider_id):
     # 認可レイヤ（設備）から既存データを削除
     query = (
         f"DELETE FROM {db_mst_schema}.mst_referenceable_layer_facility "
-        "WHERE authorization_group_id = %s;"
+        "WHERE provider_id = %s;"
     )
-    Database.execute_query_no_commit(conn, logger, query, (authorization_group_id,))
+    Database.execute_query_no_commit(conn, logger, query, (provider_id,))
 
 
-# 16. 認可レイヤ登録
+# 15. 認可レイヤ登録
 def insert_referenceable_layer_facility(
     conn,
     db_mst_schema,
-    authorization_group_id,
     authorization_information_list,
+    provider_id,
     current_time,
 ):
-    # ループしている認可グループIDと一致する配列を取り出して格納
-    insert_authorization_information_list = [
-        info
-        for info in authorization_information_list
-        if info[0] == authorization_group_id
-    ]
-
     # 認可レイヤ（設備）に認可情報を登録
     query = (
         f"INSERT INTO {db_mst_schema}.mst_referenceable_layer_facility "
-        "(authorization_group_id, layer_id, area_ignore_flag, template_id, "
-        " created_by, created_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s)"
+        "(authorization_group_id, layer_id, provider_id, "
+        "area_ignore_flag, template_id, created_by, created_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)"
     )
-    for authorization_information in insert_authorization_information_list:
+    for authorization_information in authorization_information_list:
         # 各項目を取得
         (
             authorization_group_id,
@@ -477,6 +465,7 @@ def insert_referenceable_layer_facility(
             (
                 authorization_group_id,
                 layer_id,
+                provider_id,
                 area_ignore_flag,
                 template_id,
                 "system",
@@ -485,7 +474,7 @@ def insert_referenceable_layer_facility(
         )
 
 
-# 18. CSVファイル削除
+# 17. CSVファイル削除
 def delete_csv_file(file_path):
     # 警告フラグ
     warning_flag = False
@@ -500,7 +489,7 @@ def delete_csv_file(file_path):
     return warning_flag
 
 
-# 19. 終了コード返却
+# 18. 終了コード返却
 def determine_exit_code(warning_flag):
     # 警告フラグがTRUEの場合
     if warning_flag:
@@ -568,10 +557,8 @@ def main():
         )
 
         # 9. 認可グループID取得
-        authorization_group_codelist, authorization_group_id_list = (
-            get_authorization_group_codelist(
-                db_connection, db_mst_schema, authorization_group_name_list
-            )
+        authorization_group_codelist = get_authorization_group_codelist(
+            db_connection, db_mst_schema, authorization_group_name_list
         )
 
         # 10. 認可情報リスト修正
@@ -589,38 +576,32 @@ def main():
         # 12. ベクタレイヤ存在確認
         check_vector_layer_exists(db_connection, db_mst_schema, layer_id_list)
 
-        # 13. 現在日時取得
-        current_time = datetime.now()
-
-        # 14～16で一つのトランザクション
+        # 13～15で一つのトランザクション
         with db_connection as conn:
-            for authorization_group_id in authorization_group_id_list:
-                # 14. 認可レイヤ存在確認
-                if check_referenceable_layer_facility_exists(
-                    conn, db_mst_schema, authorization_group_id
-                ):
-                    # 15. 認可レイヤ削除
-                    delete_referenceable_layer_facility(
-                        conn, db_mst_schema, authorization_group_id
-                    )
-                # 16. 認可レイヤ登録
-                insert_referenceable_layer_facility(
-                    conn,
-                    db_mst_schema,
-                    authorization_group_id,
-                    authorization_information_list,
-                    current_time,
-                )
+            # 13. 認可レイヤ削除
+            delete_referenceable_layer_facility(conn, db_mst_schema, base_provider_id)
+
+            # 14. 現在日時取得
+            current_time = datetime.now()
+
+            # 15. 認可レイヤ登録
+            insert_referenceable_layer_facility(
+                conn,
+                db_mst_schema,
+                authorization_information_list,
+                base_provider_id,
+                current_time,
+            )
             # 全ての削除・登録処理が成功した場合のみコミット
             conn.commit()
 
-        # 17. 登録成功ログ出力
+        # 16. 登録成功ログ出力
         logger.info("BPI0020", authorization_group_name_list)
 
-        # 18. CSVファイル削除
+        # 17. CSVファイル削除
         warning_flag = delete_csv_file(file_path)
 
-        # 19. 終了コード返却
+        # 18. 終了コード返却
         determine_exit_code(warning_flag)
 
     except Exception:
