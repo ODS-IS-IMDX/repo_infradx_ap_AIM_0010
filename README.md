@@ -68,7 +68,6 @@
     python AIM_0010_registAuthorizationInformation.py --filename=<ファイル名>
     ```
     ※ファイル名は必須パラメータです
-    ※chardetライブラリ（バージョン: 5.2.0）が必要です
 
 6. 実行ログを確認します。
     処理実行後、以下のようなログが出力されます。
