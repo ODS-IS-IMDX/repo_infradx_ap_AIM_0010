@@ -92,6 +92,11 @@ Python関連パッケージは App/requirements.txt に記載しており、`pip
 | Python      | 3.13.9     | PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2 |
 | PostgreSQL  | 16.8       | The PostgreSQL Licence                       |
 | PostGIS     | 3.4        | GNU General Public License version 2         |
+| chardet     | 5.2.0      | GNU Lesser General Public License v2.1       |
+| boto3       | 1.40.74    | Apache License 2.0                           |
+| psycopg2-binary | 2.9.10 | GNU Lesser General Public License v3         |
+| concurrent-log-handler | 0.9.28 | Apache License 2.0              |
+| requests    | 2.32.3     | Apache License 2.0                           |
 
 # 再配布OSS一覧
 本リポジトリには再配布するOSSは含まれていません。
