@@ -127,29 +127,29 @@ def check_csv_file_exists(file_path):
 # 3. CSVファイル文字コード確認
 def check_csv_encoding(file_path):
     # CSVファイルの文字コードがUTF-8であること
-    with open(file_path, "rb") as f:
-        rawdata = f.read()
-        result = chardet.detect(rawdata)
-        detected_encoding = result["encoding"]
+    try:
+        with open(file_path, "rb") as f:
+            rawdata = f.read()
+            result = chardet.detect(rawdata)
+            detected_encoding = result["encoding"]
 
-    if not (detected_encoding.upper() == Constants.CHARACTER_ENCODING_UTF_8):
-        logger.error("BPE0008", file_path)
+        if not (detected_encoding.upper() == Constants.CHARACTER_ENCODING_UTF_8):
+            logger.error("BPE0008", file_path)
+            logger.process_error_end()
+    except Exception:
+        logger.error("BPE0007", file_path)
         logger.process_error_end()
 
 
 # 4. CSVファイル読み込み（認可情報リスト作成）
 def read_csv(file_path):
     # CSVファイルを読み込み認可情報リストを作成
-    try:
-        with open(
-            file_path, mode="r", encoding=Constants.CHARACTER_ENCODING_UTF_8
-        ) as csv_file:
-            reader = csv.reader(csv_file)
-            authorization_information_list = [row for row in reader]
-            return authorization_information_list
-    except Exception:
-        logger.error("BPE0007", file_path)
-        logger.process_error_end()
+    with open(
+        file_path, mode="r", encoding=Constants.CHARACTER_ENCODING_UTF_8
+    ) as csv_file:
+        reader = csv.reader(csv_file)
+        authorization_information_list = [row for row in reader]
+        return authorization_information_list
 
 
 # 5. ヘッダー項目チェック
@@ -357,7 +357,7 @@ def modify_authorization_information_list(
         authorization_group_id = authorization_group_codelist[authorization_group_name]
 
         # 10-3. テンプレートID追加
-        template_id = "_".join(layer_id.split("_")[:-2])
+        template_id = "_".join(layer_id.split("_")[:-3])
 
         # 修正後の認可情報リストに追加
         # [認可グループID, レイヤID, エリア無視フラグ, テンプレートID]
@@ -378,8 +378,9 @@ def modify_authorization_information_list(
 def check_vector_layer_template_exists(db_connection, db_mst_schema, template_id_list):
     # ベクタレイヤテンプレートマスタに既存データが存在するか確認
     query = (
-        f"SELECT (SELECT COUNT(*) FROM {db_mst_schema}.mst_vector_layer_template "
-        "WHERE template_id IN %s) = %s;"
+        f"SELECT (SELECT COUNT(DISTINCT template_id) "
+        f"FROM {db_mst_schema}.mst_vector_layer_template "
+        f"WHERE template_id IN %s) = %s;"
     )
     result = Database.execute_query(
         db_connection,
